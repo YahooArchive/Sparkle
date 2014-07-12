@@ -56,7 +56,9 @@ extern OSStatus SecStaticCodeCheckValidityWithErrors(SecStaticCodeRef staticCode
         goto finally;
     }
     
-    result = SecStaticCodeCheckValidityWithErrors(staticCode, kSecCSDefaultFlags | kSecCSCheckAllArchitectures, requirement, (CFErrorRef *)error);
+    result = SecStaticCodeCheckValidityWithErrors(staticCode,
+                                                  kSecCSDefaultFlags | kSecCSCheckAllArchitectures | kSecCSCheckNestedCode,
+                                                  requirement, (CFErrorRef *)error);
     if (result != 0 && error) [*error autorelease];
     
 finally:
