@@ -6,6 +6,7 @@
 //
 //
 
+#import <Cocoa/Cocoa.h>
 #import <Security/CodeSigning.h>
 #import "SUCodeSigningVerifier.h"
 #import "SULog.h"
@@ -25,11 +26,12 @@ extern OSStatus SecStaticCodeCheckValidityWithErrors(SecStaticCodeRef staticCode
 {
     // This API didn't exist prior to 10.6.
     if (SecCodeCopySelf == NULL) return NO;
-    
+
     OSStatus result;
     SecRequirementRef requirement = NULL;
     SecStaticCodeRef staticCode = NULL;
     SecCodeRef hostCode = NULL;
+    SecCSFlags flags = kSecCSDefaultFlags;
     
     result = SecCodeCopySelf(kSecCSDefaultFlags, &hostCode);
     if (result != 0) {
@@ -37,10 +39,20 @@ extern OSStatus SecStaticCodeCheckValidityWithErrors(SecStaticCodeRef staticCode
         goto finally;
     }
     
-    result = SecCodeCopyDesignatedRequirement(hostCode, kSecCSDefaultFlags, &requirement);
-    if (result != 0) {
-        SULog(@"Failed to copy designated requirement %d", result);
-        goto finally;
+    if ( floor(NSAppKitVersionNumber) > NSAppKitVersionNumber10_8 )
+    {
+        result = SecCodeCopyDesignatedRequirement(hostCode, kSecCSDefaultFlags, &requirement);
+        if (result != 0) {
+            SULog(@"Failed to copy designated requirement %d", result);
+            goto finally;
+        }
+        
+        // add checking for nested code
+        flags = kSecCSDefaultFlags | kSecCSCheckNestedCode;
+    }
+    else
+    {
+        flags =  kSecCSBasicValidateOnly;
     }
     
     NSBundle *newBundle = [NSBundle bundleWithPath:destinationPath];
@@ -57,8 +69,10 @@ extern OSStatus SecStaticCodeCheckValidityWithErrors(SecStaticCodeRef staticCode
     }
     
     result = SecStaticCodeCheckValidityWithErrors(staticCode,
-                                                  kSecCSDefaultFlags | kSecCSCheckAllArchitectures | kSecCSCheckNestedCode,
-                                                  requirement, (CFErrorRef *)error);
+                                                  flags,
+                                                  requirement,
+                                                  (CFErrorRef *)error);
+    
     if (result != 0 && error) [*error autorelease];
     
 finally:

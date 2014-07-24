@@ -51,8 +51,6 @@ static void peer_event_handler(xpc_connection_t peer, xpc_object_t event)
 			NSString *temporaryName = tmp ? [NSString stringWithUTF8String:tmp] : nil;
 			NSError *error = nil;
             
-            
-            // Validation
             if ( [SUCodeSigningVerifier codeSignatureIsValidAtPath:temporaryName error:&error] )
             {
                 // Installation
@@ -60,9 +58,10 @@ static void peer_event_handler(xpc_connection_t peer, xpc_object_t event)
             }
             else
             {
-                SULog(@"====> Code signature check on update failed: %@", [error description]);
+                SULog(@"====> XPC: Code signature check on update (%lf) failed: %@", NSAppKitVersionNumber, [error description]);
+                NSLog(@"====> XPC: Code signature check on update (%lf) failed: %@", NSAppKitVersionNumber, [error description]);
             }
-			
+            
 			// send response to indicate ok
 			xpc_object_t reply = xpc_dictionary_create_reply(event);
 			xpc_connection_send_message(peer, reply);
