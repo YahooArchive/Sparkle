@@ -274,19 +274,57 @@
         downloadedData = [[NSMutableData dataWithCapacity: [updateItem getFileSize] ] retain];
     }
     
-    if ( [[NSFileManager defaultManager] fileExistsAtPath: resumeDataFile] )
+    unsigned long rangeOfResumeAbleData = 0;
+    
+    if ( [updateItem getFileSize] > 0 && [[NSFileManager defaultManager] fileExistsAtPath: resumeDataFile] )
     {
         NSData* savedData = [[NSData dataWithContentsOfFile:resumeDataFile] retain];
         [[NSFileManager defaultManager] removeItemAtPath:resumeDataFile error:&error];
         [downloadedData appendData:savedData];
         SULog(@"Loaded %lu bytes from a previous download", [downloadedData length]);
+        
+        rangeOfResumeAbleData = [downloadedData length];
+        if ( [updateItem getFileSize] > 0 && rangeOfResumeAbleData > [updateItem getFileSize] )
+        {
+            SULog(@"Failure to recover previous downloaded data (size:%lu) - expected was %lu ", rangeOfResumeAbleData, [updateItem getFileSize]);
+            
+            rangeOfResumeAbleData = 0;
+            [downloadedData release];
+            downloadedData = nil;
+        }
+        
+        else if ( [updateItem getFileSize] == rangeOfResumeAbleData )
+        {
+            SULog(@"Resumable data has the expected size (size:%lu) - expected was %lu ", rangeOfResumeAbleData, [updateItem getFileSize]);
+            
+            NSError* filError = nil;
+            [downloadedData writeToFile:downloadPath options:nil error:&error];
+            [downloadedData release];
+            downloadedData = nil;
+            
+            if ( filError )
+            {
+                SULog(@"Error writing to disk %@ - resetting download", [error description]);
+                
+                rangeOfResumeAbleData = 0;
+                [downloadedData release];
+                downloadedData = nil;
+            }
+            else
+            {
+                SULog(@"Resumable data had the same size as the expected data - process to extract");
+                // reseting download retries after success
+                downloadRetryCounter = 0;
+                [self extractUpdate];
+            }
+        }
     }
     
     // try resuming download
-    if ( [downloadedData length] > 0 )
+    if ( rangeOfResumeAbleData > 0 )
     {
         NSString *range = @"bytes=";
-        range = [[range stringByAppendingString:[[NSNumber numberWithLongLong: [downloadedData length]] stringValue]] stringByAppendingString:@"-"];
+        range = [[range stringByAppendingString:[[NSNumber numberWithLongLong: rangeOfResumeAbleData] stringValue]] stringByAppendingString:@"-"];
         [request setValue:range forHTTPHeaderField:@"Range"];
     }
     
@@ -657,29 +695,53 @@
 }
 - (void) saveResumableData:(NSNotification *)aNotification
 {
-    if ( aNotification != nil )
-        SULog(@"saveResumableData received notification - %@", [aNotification name]);
-    if ( resumeDataFile == nil ) return;
-    
-    SULog(@"application is ending/aborting download: saving resumable data to %@", resumeDataFile);
-    if ( urlConnection != nil )
-        [urlConnection cancel];
-    
-    if ( downloadedData != nil && [downloadedData length] > 0 )
+    if ( [updateItem getFileSize] == 0 )
     {
-        NSError* error = nil;
-        if ( resumeDataFile == nil )
-            resumeDataFile = [[tempDir stringByAppendingPathComponent:@"resume.dat"] retain];
-        [downloadedData writeToFile:resumeDataFile options:nil error:&error];
-        
-        if ( error )
-            SULog(@"Errortrying to save resumeData: %@", [error description]);
-        else
-            SULog(@"Saved resume data to %@", resumeDataFile);
-        
-        [downloadedData release];
-        downloadedData = nil;
+        SULog(@"Update Item doesn't has a file size defined, abort saving resumable data as we can't properly validate it");
     }
+    else
+    {
+        if ( aNotification != nil )
+            SULog(@"saveResumableData received notification - %@", [aNotification name]);
+        
+        if ( resumeDataFile != nil )
+        {
+            SULog(@"application is ending/aborting download: saving resumable data to %@", resumeDataFile);
+
+            if ( urlConnection != nil )
+                [urlConnection cancel];
+            
+            if (
+                downloadedData != nil &&
+                [downloadedData length] > 0 &&
+                [updateItem getFileSize] >= [downloadedData length]
+                )
+                
+            {
+                NSError* error = nil;
+                if ( resumeDataFile == nil )
+                    resumeDataFile = [[tempDir stringByAppendingPathComponent:@"resume.dat"] retain];
+                
+                [downloadedData writeToFile:resumeDataFile options:nil error:&error];
+                
+                if ( error )
+                    SULog(@"Errortrying to save resumeData: %@", [error description]);
+                else
+                    SULog(@"Saved resume data to %@", resumeDataFile);
+                
+            }
+            else
+            {
+                SULog(@"It wasn't possible to save resumable data. Expected=%lu Downloaded=%lu",
+                      [updateItem getFileSize],
+                      [downloadedData length]
+                      );
+            }
+        }
+    }
+    
+    [downloadedData release];
+    downloadedData = nil;
 }
 
 - (void) tryDownloadRetry
